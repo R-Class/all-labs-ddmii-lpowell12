@@ -1,0 +1,177 @@
+---
+title: "lab 3"
+author: "Linnea Powell"
+date: "February 9, 2017"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message=F, warning=F ) 
+```
+
+# load and plot shapefile
+```{r}
+library( maptools )
+library( sp )
+
+syr <- readShapePoly( fn="01-05-2015", proj4string=CRS("+proj=longlat +datum=WGS84") )
+
+plot( syr,  border="gray80" )
+```
+
+# grab census data
+```{r}
+devtools::install_github("hrecht/censusapi")
+censuskey <- "b06146bd7469912826a96e117fcf4a8ab8bc36de"
+library(censusapi)
+```
+
+# select variables Per Capita Income, Asian population, Income < poverty level last 12 months
+```{r}
+myvars <- c("NAME", "B19301_001E", "B01001D_001E", "B17001_002E")
+acs5_2014 <- getCensus(name="acs5", vintage=2014, key=censuskey,
+    vars=myvars, region="tract:*", regionin="state:36")
+head( acs5_2014 )
+oc <- subset(acs5_2014, county == "067")
+oc$newtract <- (as.numeric(oc$tract)/100)
+head(oc)
+
+```
+
+#Variable 1
+# making color pallette for Per Capita Income
+```{r}
+color.function <- colorRampPalette( c("light gray","steel blue" ) )
+
+col.ramp <- color.function( 4 )
+
+color.vector <- cut( rank(oc$B19301_001E), breaks=4, label=col.ramp)
+
+color.vector <- as.character( color.vector )
+
+
+```
+
+# match up shapefile and census data
+```{r}
+this.order <- match(syr$CensusTrac, oc$newtract )
+
+color.vec.ordered <- color.vector[ this.order ]
+
+```
+
+# get feel of Per Capita income (B19301_001E)
+```{r}
+summary(oc$B19301_001E)
+hist(oc$B19301_001E)
+```
+
+# Graph Per Capita Income in Syracuse
+```{r}
+
+plot( syr, col=color.vec.ordered, border=FALSE, main="Syracuse Per Capita Income, 2014" )
+
+legend.text=c("less than $20,250" ,
+              "$20,251 - $28,680",
+              "$28,681 - $34,380",
+              "more than $34,381")
+
+legend( "bottomleft", bg="white",
+        pch=20, pt.cex=1.5, cex=0.8,
+        legend=legend.text, 
+        col=col.ramp, 
+        box.col="white",
+        title="Per Capita Income" 
+       )
+      
+```
+
+#Variable 2
+# making color pallette for Asian population
+```{r}
+color.function <- colorRampPalette( c("light gray","steel blue" ) )
+
+col.ramp <- color.function( 4 )
+
+color.vector2 <- cut( rank(oc$B01001D_001E), breaks=4, label=col.ramp)
+
+color.vector2 <- as.character( color.vector2 )
+
+this.order <- match(syr$CensusTrac, oc$newtract )
+
+color.vec.ordered2 <- color.vector2[ this.order ]
+
+```
+
+
+# get feel of Asian population (B01001D_001E)
+```{r}
+summary(oc$B01001D_001E)
+hist(oc$B01001D_001E)
+```
+
+# Graph Asian population in Syracuse
+```{r}
+
+plot( syr, col=color.vec.ordered2, border=FALSE, main="Asian population, 2014" )
+
+legend.text=c("less than 10" ,
+              "10-46",
+              "47-143",
+              "144+")
+
+legend( "bottomleft", bg="white",
+        pch=20, pt.cex=1.5, cex=0.8,
+        legend=legend.text, 
+        col=col.ramp, 
+        box.col="white",
+        title="Number of Asian people" 
+       )
+      
+```
+
+
+#Variable 3
+# making color pallette for Income < poverty level last 12 months
+```{r}
+color.function <- colorRampPalette( c("light gray","red" ) )
+
+col.ramp <- color.function( 4 )
+
+color.vector3 <- cut( rank(oc$B17001_002E), breaks=4, label=col.ramp)
+
+
+color.vector3 <- as.character( color.vector3 )
+
+this.order <- match(syr$CensusTrac, oc$newtract )
+
+color.vec.ordered3 <- color.vector3[ this.order ]
+
+```
+
+
+# get feel of Income < poverty level last 12 months (B17001_002E)
+```{r}
+summary(oc$B17001_002E)
+hist(oc$B17001_002E)
+```
+
+# Graph Income < poverty level last 12 months in Syracuse
+```{r}
+
+plot( syr, col=color.vec.ordered3, border=FALSE, main="Income below poverty level in Syracuse, 2014" )
+
+legend.text=c("0-180" ,
+              "180-343",
+              "343-674",
+              "675+")
+
+legend( "bottomright", bg="white",
+        pch=20, pt.cex=1.5, cex=0.8,
+        legend=legend.text, 
+        col=col.ramp, 
+        box.col="white",
+        title="Number of people with \n income below poverty level" 
+       )
+      
+```
