@@ -1,0 +1,173 @@
+---
+title: "lab 4"
+author: "Linnea Powell"
+date: "February 14, 2017"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set( message=F, warning=F ) 
+```
+
+## load and plot shapefile
+
+```{r}
+library( maptools )
+library( sp )
+library( dplyr )
+library( pander )
+syr <- readShapePoly( fn="01-05-2015", proj4string=CRS("+proj=longlat +datum=WGS84") )
+
+```
+
+## Question 1: How many single family homes are in each neighborhood?
+
+```{r}
+
+dat <- as.data.frame( syr )
+
+subset.NL<- select(dat, Nhood, LandUse)
+
+subset.single <- filter(subset.NL, LandUse=="Single Family" )
+
+single.nhood <- count(subset.single, Nhood)
+
+pander(single.nhood)
+```
+
+
+```{r fig.width=6}
+par(mar=c(1,1,1,1))
+dat.sf <- syr$LandUse == "Single Family"
+
+sf <- syr[ dat.sf , ] 
+
+dat.sf[ is.na(dat.sf) ] <- F
+
+sf <- syr[ dat.sf , ]
+
+rainbowcols <- rainbow(31,
+ s = 0.5)
+
+palette(rainbowcols)
+
+not.single.fam <- syr[syr$LandUse != "Single Family", ]
+plot(not.single.fam, col="gray80", border=F, main="Single Family Homes in Syracuse by Neighborhood")
+
+plot( sf, border=sf$Nhood, col=sf$Nhood, add=T)
+legend.text=c("Brighton" ,
+              "Court-Woodlawn",
+              "Downtown",
+              "Eastwood",
+              "Elmwood",
+              "Far Westside",
+              "Hawley-Green",
+              "Lakefront",
+              "Lincoln Hill",
+              "Meadowbrook",
+              "Near Eastside",
+              "Near Westside",
+              "North Valley",
+              "Northside",
+              "Outer Comstock",
+              "Park Ave",
+              "Prospect Hill",
+              "Salt Springs",
+              "Sedgwick",
+              "Skunk City",
+              "South Campus",
+              "South Valley",
+              "Southside",
+              "Southwest",
+              "Strathmore",
+              "Tipp Hill",
+              "University Hill",
+              "University Neighborhood",
+              "Washington Square",
+              "Westcott",
+              "Winkworth")
+              
+              
+         
+legend( "bottomright", bg="white",
+        pch=19, pt.cex=.5, cex=0.4,
+        legend=legend.text, 
+        col=rainbowcols, 
+        box.col="white",
+        title="Neighborhoods" )
+
+
+```
+
+
+## Question 2: Where does land in Syracuse have the highest value? 
+
+```{r}
+dat2<- select(dat, Nhood, LandUse, AssessedVa)
+SFsubset <- filter(dat2, LandUse == "Single Family" )
+head(SFsubset)
+countSF<- count(SFsubset, Nhood)
+
+above200 <- filter(SFsubset, AssessedVa > 200000 )
+countabove200 <- count(above200, Nhood)
+
+combine <- merge (countSF, countabove200, by.x="Nhood", by.y="Nhood", all.x=T)
+percentdat <- mutate(combine, percentabove200k = n.y / n.x )
+
+percentdat  <- plyr::rename(percentdat , c("Nhood"="Neighborhood", "percentabove200k"="Above200k"))
+percentdat.2column<- select(percentdat, Neighborhood, Above200k)
+pander(percentdat.2column)
+
+```
+
+```{r}
+syr.dat.plus <- mutate( dat, LandValPerAcre = AssessedLa / Acres )
+
+color.function <- colorRampPalette( c("light gray","steel blue" ) )
+
+col.ramp <- color.function( 10 )
+
+color.vector <- cut( rank(syr.dat.plus$LandValPerAcre), breaks=10, label=col.ramp)
+
+color.vector <- as.character( color.vector )
+
+plot( syr, col=color.vector, border=FALSE, main="Value per Acre in Syracuse" )
+
+
+```
+
+##Question 3: What is the age of single family homes in each neighborhood? 
+
+```{r}
+
+syr.age <- mutate(dat, age= 2017- as.numeric(as.character(YearBuilt)))
+syr.group<- group_by(syr.age, Nhood)
+summarise(syr.group, "10th" = quantile(na.omit(age), .1), "25th" = quantile(na.omit(age), .25), "50th" = quantile(na.omit(age), .50), "75th" = quantile(na.omit(age), .75), "90th" = quantile(na.omit(age), .90))
+
+```
+
+```{r}
+year.dat<- select(dat, YearBuilt)
+year.dat$YearBuilt <-as.numeric(as.character(year.dat$YearBuilt))
+
+color.function <- colorRampPalette( c("steel blue","light gray" ) )
+
+col.ramp <- color.function( 13 )
+
+syr.age$age<-as.character(syr.age$age)
+
+color.vector <- cut(year.dat$YearBuilt, breaks=c(1790, seq(from = 1900, to = 2020, by =10)), labels = col.ramp)  
+
+color.vector <- as.character( color.vector )
+
+plot( syr, col=color.vector, border=FALSE, main="Age of Syracuse Properties by Decade" )
+
+legend.text <- c("1790-1900","1900-1910", "1910-1920", "1920-1930", "1930-1940", "1940-1950", "1950-1960", "1960-1970", "1970-1980", "1980-1990", "1990-2000", "2000-2010", "2010-2017")
+legend( "bottomright", bg="white",
+        pch=19, pt.cex=1.5, cex=0.7,
+        legend=legend.text, 
+        col=col.ramp, 
+        box.col="white",
+        title="Year Built")
+
+````
