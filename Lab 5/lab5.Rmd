@@ -1,0 +1,142 @@
+---
+title: "lab 5 - create a research database of home values in Syracuse"
+author: "Linnea Powell"
+date: "February 21, 2017"
+output: github_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set( message=F, warning=F )
+```
+
+```{r}
+#install.packages( "RCurl" )
+
+#install.packages( "ggmap" )
+
+#install.packages( "jsonlite" )
+
+#install.packages( "memisc" )
+
+```
+
+
+## 1. Start with the dataset of home prices and assets collected from Zillow
+```{r}
+# load package to read URL data
+library( RCurl )
+
+# address of Housing Price In-Class Exercise spreadsheet
+my.url <- "https://docs.google.com/spreadsheets/d/1W0vM5sCRhZjkQh6A0WGV8j1rhQAjecCrQW7PguHft-E/pub?gid=1989082857&single=true&output=csv"
+
+housing.raw <- getURL( my.url, ssl.verifypeer=FALSE )
+
+dat <- read.csv( textConnection(housing.raw), stringsAsFactors=FALSE )
+
+head( dat )
+
+# RENAME VARIABLES
+names( dat ) <- c("timestamp","price","X1","X2","sqft","your.name","lot.size","beds",
+                  "bath","garage","year","elementary","middle","high","walk","tax","highway",
+                  "restaurant","starbucks","park","mall","address","zip","tract" )
+# remove commas from numbers
+dat$price <- as.numeric( gsub( ",","", dat$price ) )
+dat$tax <- as.numeric( gsub( ",","", dat$tax ) )
+dat$lot.size <- as.numeric( gsub( ",","", dat$lot.size ) )
+dat$sqft <- as.numeric( gsub( ",","", dat$sqft ) )
+
+dat$lot.size[ is.na( dat$lot.size ) ] <- mean( dat$lot.size, na.rm=T )
+
+# clean up
+rm( housing.raw )
+rm( my.url )
+```
+
+
+```{r}
+houses <- dat[ , c("address","zip") ]
+
+houses$address <- gsub( ",", "", houses$address )
+houses$address <- gsub( "\\.", "", houses$address )
+
+addresses <- paste( houses$address, "Syracuse, NY", houses$zip, sep=", " )
+
+head( addresses )
+
+library( ggmap )
+
+# translate street address to latitude longitude coordinates
+
+#lat.long <- geocode( addresses [1:6] )
+#lat.long
+
+# pre-geocoded version of dataset for demo
+
+lat.long <- read.csv ("https://raw.githubusercontent.com/lecy/hedonic-prices/master/Data/lat.long.csv")
+
+head(lat.long)
+```
+
+##2. Add a census tracts FIPS ID to each home (spatial join to census tracts)
+```{r}
+library( maptools )
+library( sp )
+library( spatialEco )
+download.file("ftp://ftp2.census.gov/geo/tiger/TIGER2010/TRACT/2010/tl_2010_36067_tract10.zip", "onondaga census tracts.zip" )
+
+unzip( "onondaga census tracts.zip" )
+
+file.remove( "onondaga census tracts.zip" )
+
+onondoga <- readShapePoly( fn="tl_2010_36067_tract10", proj4string=CRS("+proj=longlat +datum=WGS84") )
+#syr <- readShapePoly( fn="01-05-2015", proj4string=CRS("+proj=longlat +datum=WGS84") )
+
+lat.long2<-SpatialPoints(lat.long, proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+poly.data.matched.to.points <- over(lat.long2, onondoga )
+
+all.dat <- cbind( houses, lat.long, poly.data.matched.to.points )
+
+```
+
+
+##3. Add census data to each home
+```{r}
+devtools::install_github("hrecht/censusapi")
+censuskey <- "b06146bd7469912826a96e117fcf4a8ab8bc36de"
+library(censusapi)
+library(jsonlite)
+```
+
+```{r}
+# get variables for employment and travel time to work
+
+myvars <- c("NAME", "B23025_004E", "B08136_001E")
+acs5_2015 <- getCensus(name="acs5", vintage=2015, key=censuskey,
+    vars=myvars, region="tract:*", regionin="state:36")
+head(acs5_2015)
+acs5_2015_onondaga <- subset(acs5_2015, county == "067")
+
+census.house.dat <- merge (all.dat, acs5_2015_onondaga, by.x="TRACTCE10", by.y="tract", all.x=T)
+head(census.house.dat)
+```
+
+##4. Aggregate crimes by census tract and add to the dataset
+```{r}
+library(dplyr)
+crimes.dat <- read.csv ("https://raw.githubusercontent.com/lecy/hedonic-prices/master/Data/crime.lat.lon.csv")
+
+head(crimes.dat)
+
+crimes.dat2<-SpatialPoints(crimes.dat, proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+crimes.combine <- over(crimes.dat2, onondoga )
+
+crimes.dat3<- cbind(crimes.dat, crimes.combine)
+
+crimes.dat4<- group_by(crimes.dat3, TRACTCE10)
+
+crimes.dat5<- as.data.frame(summarise(crimes.dat4, crimecount = n()))
+
+census.house.crime.dat <- merge (census.house.dat, crimes.dat5, by.x="TRACTCE10", by.y="TRACTCE10", all.x=T)
+```
