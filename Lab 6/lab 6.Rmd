@@ -1,0 +1,184 @@
+---
+title: "Lab 6"
+author: "Linnea Powell"
+date: "March 9, 2017"
+output: github_document
+---
+
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set( message=F, warning=F )
+```
+
+### load libraries
+```{r}
+library( maptools )
+library( sp )
+library(raster)
+library(rgeos)
+library(dplyr)
+library( spatialEco )
+library( rgdal )
+library( geojsonio )
+library(maps)
+```
+
+## Part 1
+
+### download onondaga census tracts
+```{r}
+download.file("ftp://ftp2.census.gov/geo/tiger/TIGER2010/TRACT/2010/tl_2010_36067_tract10.zip", "onondaga census tracts.zip" )
+
+unzip( "onondaga census tracts.zip" )
+
+file.remove( "onondaga census tracts.zip" )
+
+#dir()
+```
+
+### load and plot your shapefile
+```{r}
+syr <- readShapePoly( fn="tl_2010_36067_tract10", proj4string=CRS("+proj=longlat +datum=WGS84") )
+
+par( mar=c(0,0,0,0) )
+plot( syr,  border="gray10" )
+
+```
+
+### add roads
+```{r}
+download.file("ftp://ftp2.census.gov/geo/tiger/TIGER2015/PRISECROADS/tl_2015_36_prisecroads.zip", "primary_and_secondary_roads.zip" )
+
+unzip( "primary_and_secondary_roads.zip" )
+
+file.remove( "primary_and_secondary_roads.zip" )
+
+roads <- readShapeLines( fn="tl_2015_36_prisecroads", proj4string=CRS("+proj=longlat +datum=WGS84") )
+
+head( roads@data )
+table( roads$RTTYP )
+```
+
+### extract interstates
+```{r}
+par( mar=c(0,0,0,0) )
+plot( syr,  border="gray80" )
+plot( roads, col="steelblue", lwd=2, add=T )
+
+interstate <- roads[ roads$RTTYP == "I" , ]
+plot( interstate, col="red", add=T )
+```
+
+### clip shapefile
+```{r}
+gClip <- function(shp, bb){
+if(class(bb) == "matrix") b_poly <- as(extent(as.vector(t(bb))), "SpatialPolygons")
+else b_poly <- as(extent(bb), "SpatialPolygons")
+gIntersection(shp, b_poly, byid = T)
+}
+
+roads_clipped <- gClip(roads, syr)
+
+par( mar=c(0,0,0,0) )
+plot( syr,  border="gray80" )
+plot( roads_clipped, col="steelblue", lwd=2, add=T )
+```
+
+### extract interstates as a separate layer 
+```{r}
+interstate <- roads[ roads$RTTYP == "I" , ]
+```
+
+### create interstate buffer
+```{r}
+interstate_clipped <- gClip(interstate, syr)
+
+par( mar=c(0,0,0,0) )
+plot( syr, border="gray80" )
+plot( interstate_clipped, col="red", add=T)
+
+buff1 <- gBuffer(interstate_clipped, width = .005, byid=FALSE)
+plot(buff1, add=T)
+
+```
+
+### identify all houses within zone and add new variable
+```{r}
+house.dat <- read.csv("https://raw.githubusercontent.com/lecy/hedonic-prices/master/Data/Housing%20Price%20In-Class%20Exercise%20(Responses).csv")
+#head(house.dat)
+lat.long <- read.csv ("https://raw.githubusercontent.com/lecy/hedonic-prices/master/Data/lat.long.csv")
+
+lat.long2<-SpatialPoints(lat.long, proj4string=CRS("+proj=longlat +datum=WGS84"))
+matchpointstobuffer <- over(lat.long2, buff1 )
+matchpointstobuffer[is.na(matchpointstobuffer)] <- 0
+inZone <-matchpointstobuffer==1
+inZone
+dathouse <- as.data.frame(house.dat )
+#dat.buffer <- cbind( dathouse, inZone)#problem with differing number of rows
+
+house.dat.buffer<- merge(dathouse, inZone)
+
+plot( syr, border="gray80" )
+plot(buff1, col="red", add=T)
+points(lat.long2$lon[inZone], lat.long2$lat[inZone], col="blue", pch=19, cex=.8)
+
+```
+
+##Part 2
+
+### load geojson file
+```{r}
+syr.geo <- readOGR(dsn="C:/Users/powel/Documents/Data 2/syr_parcels.geojson", layer="OGRGeoJSON") 
+
+```
+
+### Industrial Zones - create buffer, plot it, identify houses within it, create new variable
+
+```{r}
+industrial_zone <- syr.geo[syr.geo$LandUse=="Industrial", ]
+other_zones <- syr.geo[syr.geo$LandUse!="Industrial", ]
+
+plot(other_zones, col = "grey", border = F)
+plot(industrial_zone, add = T, col = "blue", border = F)
+
+industrialBuffer <- gBuffer(industrial_zone, width = .005)
+plot(industrialBuffer, add = T, col = "yellow")
+points(lat.long2$lon, lat.long2$lat, col="blue", pch=19, cex=.5)
+
+industrialBuffer.proj<- spTransform(industrialBuffer, CRS("+proj=longlat +datum=WGS84"))
+industrial_over <- over(lat.long2, industrialBuffer.proj)
+
+industrial_over[is.na(industrial_over)] <- 0
+in_industrial_zone <-industrial_over==1
+dathouse_with_indzone <- merge(dathouse, in_industrial_zone)
+head(dathouse_with_indzone)
+names(dathouse_with_indzone)[names(dathouse_with_indzone)=="y"] <- "In Industrial Zone"
+head(dathouse_with_indzone)
+
+
+```
+
+
+
+### Schools - create buffer, plot it, identify houses within it, create new variable
+```{r}
+schools <- syr.geo[syr.geo$LandUse=="Schools", ]
+not_schools <- syr.geo[syr.geo$LandUse!="Schools", ]
+
+plot(not_schools, col = "grey", border = F)
+plot(schools, add = T, col = "blue", border = F)
+
+schoolBuffer <- gBuffer(schools, width = .0025)
+plot(schoolBuffer, add = T, col = "green")
+points(lat.long2$lon, lat.long2$lat, col="blue", pch=19, cex=.8)
+
+schoolBuffer.proj<- spTransform(schoolBuffer, CRS("+proj=longlat +datum=WGS84"))
+schools_over <- over(lat.long2, schoolBuffer.proj)
+schools_over[is.na(schools_over)] <- 0
+near_school <-schools_over==1
+dathouse_with_near_school <- merge(dathouse, near_school)
+head(dathouse_with_near_school)
+names(dathouse_with_near_school)[names(dathouse_with_near_school)=="y"] <- "Near School"
+head(dathouse_with_indzone)
+
+```
+
